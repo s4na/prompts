@@ -55,9 +55,13 @@ jobs:
       - name: Test curl download path
         run: |
           # 一時ディレクトリでテスト（ローカルファイルがない状態をシミュレート）
-          mkdir -p /tmp/curl-test
-          cd /tmp/curl-test
-          bash ${GITHUB_WORKSPACE}/src/claude/install.sh
+          mkdir -p /tmp/curl-test || exit 1
+          cd /tmp/curl-test || exit 1
+
+          # curl で直接スクリプトをダウンロード・実行
+          # これにより install.sh 内のローカルファイル探索がスキップされ、
+          # 実際の curl ダウンロードパスのみをテストできます
+          bash <(curl -fsSL https://raw.githubusercontent.com/s4na/prompts/main/src/claude/install.sh) || exit 1
 
           if [ -f ./CLAUDE.md ]; then
             echo "✓ curl 経由でのダウンロードが成功しました"
