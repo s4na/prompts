@@ -1,17 +1,15 @@
 {
-  "name": "S4NA Prompts",
-  "description": "Project configuration for Claude Code",
   "permissions": {
-    "allowedTools": [
-      "bash",
-      "glob",
-      "grep",
-      "read",
-      "write",
-      "edit",
-      "task",
-      "webfetch",
-      "websearch"
+    "allow": [
+      { "tool": "bash" },
+      { "tool": "glob" },
+      { "tool": "grep" },
+      { "tool": "read" },
+      { "tool": "write" },
+      { "tool": "edit" },
+      { "tool": "task" },
+      { "tool": "webfetch" },
+      { "tool": "websearch" }
     ]
   }
 }
