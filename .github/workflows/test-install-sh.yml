@@ -1,0 +1,34 @@
+name: Test install.sh
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/claude/install.sh'
+      - 'prompts/claude/CLAUDE.md'
+      - '.github/workflows/test-install-sh.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'src/claude/install.sh'
+      - 'prompts/claude/CLAUDE.md'
+      - '.github/workflows/test-install-sh.yml'
+
+jobs:
+  test-install:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run install.sh
+        run: bash src/claude/install.sh
+
+      - name: Verify CLAUDE.md was created
+        run: |
+          if [ -f ./CLAUDE.md ]; then
+            echo "✓ CLAUDE.md が正常にコピーされました"
+            ls -la ./CLAUDE.md
+          else
+            echo "✗ Error: CLAUDE.md が見つかりません"
+            exit 1
+          fi
