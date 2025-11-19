@@ -6,11 +6,7 @@
 set -e
 
 GITHUB_RAW_URL="https://raw.githubusercontent.com/s4na/prompts/main/prompts/claude/CLAUDE.md"
-DEST_DIR="$HOME/.claude"
-DEST_FILE="$DEST_DIR/CLAUDE.md"
-
-# Create destination directory if it doesn't exist
-mkdir -p "$DEST_DIR"
+DEST_FILE="./CLAUDE.md"
 
 # First, try to use local file if running from the project directory
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
