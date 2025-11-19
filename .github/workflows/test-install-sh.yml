@@ -1,0 +1,87 @@
+name: Test install.sh
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/claude/install.sh'
+      - 'prompts/claude/CLAUDE.md'
+      - '.github/workflows/test-install-sh.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'src/claude/install.sh'
+      - 'prompts/claude/CLAUDE.md'
+      - '.github/workflows/test-install-sh.yml'
+
+jobs:
+  test-install:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run install.sh
+        run: bash src/claude/install.sh
+
+      - name: Verify CLAUDE.md content
+        run: |
+          if [ -f ./CLAUDE.md ]; then
+            echo "✓ CLAUDE.md が正常にコピーされました"
+            ls -la ./CLAUDE.md
+
+            # ファイルサイズが0でないことを確認
+            if [ ! -s ./CLAUDE.md ]; then
+              echo "✗ Error: CLAUDE.md が空です"
+              exit 1
+            fi
+
+            # 期待されるコンテンツが含まれていることを確認
+            if ! grep -q "プログラムのコード以外" ./CLAUDE.md; then
+              echo "✗ Error: CLAUDE.md の内容が正しくありません"
+              exit 1
+            fi
+
+            echo "✓ CLAUDE.md の内容が正常です"
+          else
+            echo "✗ Error: CLAUDE.md が見つかりません"
+            exit 1
+          fi
+
+  test-install-curl:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Test curl download path
+        run: |
+          # 一時ディレクトリでテスト（ローカルファイルがない状態をシミュレート）
+          mkdir -p /tmp/curl-test || exit 1
+          cd /tmp/curl-test || exit 1
+
+          # curl で直接スクリプトをダウンロード・実行
+          # PR のブランチ（またはプッシュされたブランチ）から最新のコードをテスト
+          # github.head_ref: PR の場合は PR 元ブランチ
+          # github.ref_name: push の場合はプッシュされたブランチ
+          bash <(curl -fsSL https://raw.githubusercontent.com/${{ github.repository }}/${{ github.head_ref || github.ref_name }}/src/claude/install.sh) || exit 1
+
+          if [ -f ./CLAUDE.md ]; then
+            echo "✓ curl 経由でのダウンロードが成功しました"
+            ls -la ./CLAUDE.md
+
+            # ファイルサイズが0でないことを確認
+            if [ ! -s ./CLAUDE.md ]; then
+              echo "✗ Error: CLAUDE.md が空です"
+              exit 1
+            fi
+
+            # 期待されるコンテンツが含まれていることを確認
+            if ! grep -q "プログラムのコード以外" ./CLAUDE.md; then
+              echo "✗ Error: CLAUDE.md の内容が正しくありません"
+              exit 1
+            fi
+
+            echo "✓ curl 経由でダウンロードされた CLAUDE.md の内容が正常です"
+          else
+            echo "✗ Error: curl 経由でのダウンロードが失敗しました"
+            exit 1
+          fi
