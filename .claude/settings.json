@@ -11,5 +11,10 @@
       { "tool": "webfetch" },
       { "tool": "websearch" }
     ]
+  },
+  "hooks": {
+    "bash": {
+      "post": "afplay /System/Library/Sounds/Blow.aiff"
+    }
   }
 }
