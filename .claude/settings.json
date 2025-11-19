@@ -13,7 +13,7 @@
     ]
   },
   "hooks": {
-    "bash": {
+    "session": {
       "post": "afplay /System/Library/Sounds/Blow.aiff"
     }
   }
