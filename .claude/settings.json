@@ -13,8 +13,5 @@
       "webfetch",
       "websearch"
     ]
-  },
-  "gitignore": [
-    ".claude/settings.local.json"
-  ]
+  }
 }
