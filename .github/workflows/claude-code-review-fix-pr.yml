@@ -1,0 +1,189 @@
+name: Claude Code Review - Auto PR Creation
+
+on:
+  workflow_run:
+    workflows: ["Claude Code Review"]
+    types:
+      - completed
+
+permissions:
+  contents: write
+  pull-requests: write
+  id-token: write
+
+jobs:
+  create-fix-pr:
+    if: github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Get PR information
+        id: pr-info
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # レビュー対象の PR 情報を取得
+          PR_NUMBER=$(gh api repos/${{ github.repository }}/actions/runs/${{ github.event.workflow_run.id }}/pull_requests --jq '.[] | select(.head.ref != null) | .number' | head -1)
+          if [ -z "$PR_NUMBER" ]; then
+            echo "No PR found for this workflow run"
+            exit 0
+          fi
+
+          # PR が自動生成された PR でないかを確認（無限ループ防止）
+          LABELS=$(gh pr view $PR_NUMBER --json labels --jq '.labels[].name' 2>/dev/null | grep -c "claude-code-review" || echo "0")
+          if [ "$LABELS" -gt 0 ]; then
+            echo "This PR is already an auto-generated fix PR. Skipping."
+            exit 0
+          fi
+
+          echo "pr_number=$PR_NUMBER" >> $GITHUB_OUTPUT
+
+          # PR の詳細情報を取得
+          gh pr view $PR_NUMBER --json number,title,body,baseRefName,headRefName > pr_info.json
+          cat pr_info.json
+
+      - name: Setup git config
+        if: steps.pr-info.outputs.pr_number != ''
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Create fix branch
+        if: steps.pr-info.outputs.pr_number != ''
+        id: fix-branch
+        env:
+          PR_NUMBER: ${{ steps.pr-info.outputs.pr_number }}
+        run: |
+          BASE_BRANCH=$(cat pr_info.json | jq -r '.baseRefName')
+          FIX_BRANCH="fix/claude-review-${{ github.event.workflow_run.id }}"
+
+          # ブランチの重複をチェック
+          if git rev-parse --verify origin/"$FIX_BRANCH" 2>/dev/null; then
+            echo "Fix branch already exists. Skipping."
+            exit 0
+          fi
+
+          git checkout -b "$FIX_BRANCH" "origin/$BASE_BRANCH" || {
+            echo "Failed to create branch"
+            exit 1
+          }
+
+          echo "fix_branch=$FIX_BRANCH" >> $GITHUB_OUTPUT
+          echo "base_branch=$BASE_BRANCH" >> $GITHUB_OUTPUT
+
+      - name: Run Claude to analyze review and suggest fixes
+        if: steps.pr-info.outputs.pr_number != '' && steps.fix-branch.outputs.fix_branch != ''
+        id: claude-analysis
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          prompt: |
+            REPO: ${{ github.repository }}
+            WORKFLOW RUN ID: ${{ github.event.workflow_run.id }}
+            PR NUMBER: ${{ steps.pr-info.outputs.pr_number }}
+
+            レビュー結果を確認して、修正が必要なことはすべて修正してください。
+
+            1. 前回の Claude Code Review コメントを確認：
+               $ gh pr comments ${{ steps.pr-info.outputs.pr_number }}
+
+            2. 指摘されている問題を確認し、すべての修正が必要な箇所を特定
+
+            3. 修正が必要な箇所を実装してください：
+               - ファイルを編集または作成
+               - git add でステージング
+               - git commit で実装コミット
+
+            修正が必要でない場合は、何もコミットしないでください。
+
+            使用可能なコマンド：
+            - `gh pr comments <number>` でレビューコメントを確認
+            - `git` で修正を実装してコミット
+
+          claude_args: '--allowed-tools "Bash(gh pr comments:*),Bash(git:*)"'
+
+      - name: Check for changes
+        if: steps.pr-info.outputs.pr_number != '' && steps.fix-branch.outputs.fix_branch != ''
+        id: changes
+        env:
+          BASE_BRANCH: ${{ steps.fix-branch.outputs.base_branch }}
+        run: |
+          # コミットが実装されたかどうかを確認
+          if ! git diff --quiet "origin/$BASE_BRANCH"...HEAD; then
+            echo "changes_made=true" >> $GITHUB_OUTPUT
+          else
+            echo "changes_made=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Push fix branch and create PR
+        if: steps.pr-info.outputs.pr_number != '' && steps.changes.outputs.changes_made == 'true'
+        id: create-pr
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ steps.pr-info.outputs.pr_number }}
+          FIX_BRANCH: ${{ steps.fix-branch.outputs.fix_branch }}
+          BASE_BRANCH: ${{ steps.fix-branch.outputs.base_branch }}
+        run: |
+          set -e
+
+          # ブランチをプッシュ
+          if ! git push origin "$FIX_BRANCH" 2>&1; then
+            echo "Failed to push branch"
+            exit 1
+          fi
+
+          # PR 作成前に PR が既に存在しないかを確認
+          EXISTING_PR=$(gh pr list --head "$FIX_BRANCH" --state open --json number --jq '.[0].number' 2>/dev/null || echo "")
+
+          if [ -n "$EXISTING_PR" ]; then
+            echo "PR #$EXISTING_PR already exists for this branch"
+            echo "pr_number=$EXISTING_PR" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          # PR を作成
+          NEW_PR=$(gh pr create \
+            --base "$BASE_BRANCH" \
+            --head "$FIX_BRANCH" \
+            --title "🤖 Claude Code Review 修正: PR #$PR_NUMBER の指摘事項を修正" \
+            --body "This PR fixes issues pointed out in the Claude Code Review of PR #$PR_NUMBER.
+
+## 修正内容
+- Claude Code Review で指摘された問題を修正しました
+
+## 参照
+- レビュー対象 PR: #$PR_NUMBER
+- ワークフロー実行: ${{ github.event.workflow_run.html_url }}
+
+---
+🤖 This PR was automatically created based on Claude Code Review results." \
+            --label "auto-generated,claude-code-review" \
+            --json number --jq '.number')
+
+          echo "pr_number=$NEW_PR" >> $GITHUB_OUTPUT
+
+      - name: Add comment to original PR
+        if: steps.pr-info.outputs.pr_number != '' && steps.changes.outputs.changes_made == 'true' && steps.create-pr.outputs.pr_number != ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ steps.pr-info.outputs.pr_number }}
+          FIX_PR_NUMBER: ${{ steps.create-pr.outputs.pr_number }}
+        run: |
+          gh pr comment $PR_NUMBER --body "✅ Claude Code Review の指摘事項に対する修正を実装しました。
+
+修正内容は #$FIX_PR_NUMBER で提案させていただきます。ご確認ください。"
+
+      - name: Skip message
+        if: steps.pr-info.outputs.pr_number != '' && steps.changes.outputs.changes_made != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ steps.pr-info.outputs.pr_number }}
+        run: |
+          gh pr comment $PR_NUMBER --body "ℹ️ Claude Code Review の分析結果、現在のコードには追加の修正が不要と判定されました。
+
+レビューをご確認ください。"
