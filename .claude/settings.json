@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      { "tool": "bash" },
+      { "tool": "glob" },
+      { "tool": "grep" },
+      { "tool": "read" },
+      { "tool": "write" },
+      { "tool": "edit" },
+      { "tool": "task" },
+      { "tool": "webfetch" },
+      { "tool": "websearch" }
+    ]
+  }
+}
